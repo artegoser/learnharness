@@ -62,7 +62,6 @@ describe("repairMathForDisplay — the existing composition, unchanged", () => {
 		"`" + debris + "`",
 		"```tex\n" + debris + "\n```",
 		String.raw`$\\nabla`,
-		"$$A = \\\\begin{pmatrix}\n1 & 2\n\\\\end{pmatrix}$$", // unsupported midline display close.
 	];
 	for (const [index, value] of [...unchanged, doubled, quadrupled, debris, matrix,
 		String.raw`\(\\nabla\)`, "\\[\n\\\\nabla\n\\]"].entries()) {

@@ -26,6 +26,20 @@ const render = (text: string, recovered = true) => renderToStaticMarkup(
 	recovered ? <ToolContentResponse mode="static">{text}</ToolContentResponse> : <MessageResponse mode="static">{text}</MessageResponse>);
 const tex = (html: string) => [...dom(html).querySelectorAll('.katex[data-tex]')].map(n => n.getAttribute('data-tex'));
 
+test("the issue 388 quiz renders the whole sum and the following instruction", () => {
+	const formula = String.raw`\sum_{n=1}^{\infty}\frac{3(-2)^{n-1}}{5^n}` + "\n" + String.raw`=\frac35-\frac6{25}+\frac{12}{125}-\cdots.`;
+	const instruction = "Используй формулу суммы геометрического ряда.";
+	const quiz = { type: "check" as const, question: "Найди сумму:\n$$" + formula + "$$\n " + instruction,
+		options: [{ label: "3/7", value: "correct" }, { label: "1", value: "unsigned" }], correctAnswer: "correct", explanation: "Use the first term and common ratio." };
+	const before = structuredClone(quiz);
+	const document = dom(renderToStaticMarkup(<QuestionDock toolName="quiz" toolCallId="issue_388"
+		input={quiz} expanded onExpand={() => {}} onSubmit={() => {}} />));
+	assert.deepEqual([...document.querySelectorAll(".katex-display .katex[data-tex]")].map(node => node.getAttribute("data-tex")), [formula]);
+	assert.equal(document.querySelectorAll(".katex-error").length, 0);
+	assert.ok([...document.querySelectorAll("p")].some(node => node.textContent?.includes(instruction)));
+	assert.deepEqual(quiz, before);
+});
+
 for (const fixture of fixtures.cases) test(`preserves corpus matrix rows: ${fixture.chatId} ${fixture.source}`, () => {
 	assert.notEqual(fixture.raw, fixture.oldDisplay);
 	assert.equal(repairMathForDisplay(fixture.raw), fixture.raw);

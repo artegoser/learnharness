@@ -1,6 +1,6 @@
 "use client";
 
-import { transcriptMath } from "@/components/transcript-math";
+import { parseTranscriptBlocks, transcriptMath } from "@/components/transcript-math";
 import { Button } from "@/components/ui/button";
 import {
   ButtonGroup,
@@ -405,6 +405,7 @@ export const MessageResponse = memo(
         components={mdComponents}
         plugins={streamdownPlugins}
         rehypePlugins={streamdownRehypePlugins}
+        parseMarkdownIntoBlocksFn={props.mode === "static" ? undefined : parseTranscriptBlocks}
         remend={streamdownRemend}
         {...props}
       >

@@ -1,6 +1,8 @@
 import { createMathPlugin } from "@streamdown/math";
+import { parseMarkdownIntoBlocks } from "streamdown";
 import type { Element, Root } from "hast";
 import type { Plugin, Transformer } from "unified";
+import { markdownDisplayRanges } from "@/src/core/content-reader";
 
 const math = createMathPlugin({ singleDollarTextMath: true });
 type KatexOptions = { output?: "html"; errorColor?: string };
@@ -49,3 +51,22 @@ const htmlWithSource: Plugin<[], Root> = function () {
 };
 
 export const transcriptMath = { ...math, rehypePlugin: htmlWithSource };
+
+/** Streamdown's dollar count can include literal code or adjacent inline math.
+ * Keep its normal block splits except for boundaries inside a display formula. */
+export function parseTranscriptBlocks(markdown: string): string[] {
+	const blocks = parseMarkdownIntoBlocks(markdown);
+	if (blocks.length < 2 || !/(^|\n)[ \t>]*\${2,}[ \t]*\r?(\n|$)/.test(markdown) || blocks.join("") !== markdown) return blocks;
+	const displays = markdownDisplayRanges(markdown);
+	if (!displays.length) return blocks;
+	let offset = 0, start = 0, display = 0;
+	const merged: string[] = [];
+	for (const block of blocks) {
+		offset += block.length;
+		while (displays[display] && displays[display]!.end <= offset) display++;
+		if (displays[display] && displays[display]!.start < offset) continue;
+		merged.push(markdown.slice(start, offset));
+		start = offset;
+	}
+	return merged;
+}

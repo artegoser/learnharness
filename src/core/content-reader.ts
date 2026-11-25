@@ -18,6 +18,25 @@ const escaped = (text: string, i: number) => {
 const runLength = (text: string, i: number, char: string) => { let n = 0; while (text[i + n] === char) n++; return n; };
 type MarkdownNode = { type: string; position?: { start: { offset?: number }; end: { offset?: number } }; children?: MarkdownNode[] };
 type LiteralRange = { start: number; end: number; escapedFence?: true };
+const parseContentMarkdown = (text: string) => fromMarkdown(text, {
+	extensions: [math({ singleDollarTextMath: true })], mdastExtensions: [mathFromMarkdown()],
+});
+
+/** Source offsets of complete display blocks, including blocks in containers. */
+export function markdownDisplayRanges(text: string): Array<{ start: number; end: number }> {
+	const pending: MarkdownNode[] = [parseContentMarkdown(text)];
+	const ranges: Array<{ start: number; end: number }> = [];
+	while (pending.length) {
+		const node = pending.pop()!;
+		if (node.type === "math") {
+			const start = node.position?.start.offset, end = node.position?.end.offset;
+			if (start === undefined || end === undefined) continue;
+			const close = /\n[ \t>]*(\${2,})[ \t]*\r?$/.exec(text.slice(start, end));
+			if (close && close[1]!.length >= runLength(text, start, "$")) ranges.push({ start, end });
+		} else if (node.children) pending.push(...node.children);
+	}
+	return ranges.sort((a, b) => a.start - b.start);
+}
 
 /** Read virtual lines without decoding their contents. Only odd final slashes
  * denote layout; even runs before n remain literal source. */
@@ -77,7 +96,7 @@ function escapedFenceRanges(text: string, native: LiteralRange[]): { fences: Lit
  * ranges, including nested quotes/lists and implicit container endings.
  * Keep source offsets: never serialize the AST back into Markdown. */
 function nativeLiteralRanges(text: string, offset = 0): LiteralRange[] {
-	const pending: MarkdownNode[] = [fromMarkdown(text, { extensions: [math({ singleDollarTextMath: true })], mdastExtensions: [mathFromMarkdown()] })];
+	const pending: MarkdownNode[] = [parseContentMarkdown(text)];
 	const ranges: LiteralRange[] = [];
 	while (pending.length) {
 		const node = pending.pop()!;
@@ -260,9 +279,64 @@ function decodeEscapedCodeFence(raw: string): string | null {
 	return tree.children.length === 1 && tree.children[0]?.type === "code" ? decoded : null;
 }
 
+function framePhysicalDisplay(text: string, start: number, end: number) {
+	const opening = /^(\${2,})(?!\$)([^$\r\n]*)(\r?\n)/.exec(text.slice(start, end));
+	if (!opening) return;
+	const fence = opening[1]!, firstLine = opening[2]!, newline = opening[3]!;
+	const bodyStart = start + fence.length;
+	for (let cursor = start + opening[0].length; cursor < end;) {
+		const next = text.indexOf("\n", cursor);
+		const lineEnd = next < 0 ? end : Math.min(next, end);
+		const line = text.slice(cursor, lineEnd);
+		if (!line.trim()) return;
+		const close = /(?<!\$)\${2,}[ \t]*\r?$/.exec(line);
+		if (close && !escaped(line, close.index) && runLength(line, close.index, "$") >= fence.length) {
+			const beforeClose = line.slice(0, close.index);
+			if ([...beforeClose.matchAll(/%/g)].some(match => !escaped(line, match.index))) {
+				cursor = lineEnd + 1;
+				continue;
+			}
+			const openInline = Boolean(firstLine.trim());
+			const closeInline = Boolean(beforeClose.trim());
+			if (!openInline && !closeInline) return;
+			const closeStart = cursor + close.index;
+			return { end: lineEnd, value: fence + (openInline ? newline : "") + text.slice(bodyStart, closeStart) +
+				(closeInline ? newline : "") + text.slice(closeStart, lineEnd) };
+		}
+		cursor = lineEnd + 1;
+	}
+}
+
+/** Repair only top-level flow math with a physical close before a blank line. */
+function recoverPhysicalDisplayFences(text: string): string {
+	if (!/(^|\n) {0,3}\${2,}[^$\r\n]*\r?\n/.test(text) || !/\$\$[ \t]*[^\s$]|[^\s$][ \t]*\$\$/.test(text)) return text;
+	let from = 0, out = "", suffix = 0;
+	while (suffix < text.length) {
+		const offset = suffix;
+		suffix = text.length;
+		for (const node of parseContentMarkdown(text.slice(offset)).children) {
+			if (node.type !== "math") continue;
+			const start = node.position?.start.offset, end = node.position?.end.offset;
+			if (start === undefined || end === undefined) continue;
+			const framed = framePhysicalDisplay(text, offset + start, offset + end);
+			if (!framed) continue;
+			out += text.slice(from, offset + start) + framed.value;
+			from = framed.end;
+			if (from < offset + end) {
+				// A midline close can make CommonMark swallow the following
+				// blocks. Read that suffix again with its own literal barriers.
+				suffix = from;
+				break;
+			}
+		}
+	}
+	return out + text.slice(from);
+}
+
 /** Document escapes are not arbitrary string decoding. Complete known TeX
  * words win over the prefix `\\n`; native code is never rewritten. */
 export function recoverDocumentLayout(text: string): string {
+	text = recoverPhysicalDisplayFences(text);
 	const spans = readContentSpans(text);
 	const candidates = spans.filter(span => span.kind !== "code").map(span => span.raw).join("\u0000");
 	const declared = new Set([

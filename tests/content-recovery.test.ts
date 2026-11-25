@@ -38,6 +38,35 @@ test("physical display newlines and genuine row breaks/comments survive", () => 
 	const source = "$$\n" + math`\begin{aligned}a&=b\\% row comment` + "\nc&=d\end{aligned}\n$$";
 	assert.equal(repairMathForDisplay(source), source);
 });
+test("physical tool display framing recovers all three layouts from issue 388", () => {
+	for (const newline of ["\n", "\r\n"]) {
+		const body = math`\sum_{n=1}^{\infty}\frac{3}{5^n}` + newline + math`=\frac35+\cdots`;
+		const expected = ["Sum:", "$$", body, "$$", "Follow-up."].join(newline);
+		for (const source of ["$$" + body + "$$", "$$" + newline + body + "$$", "$$" + body + newline + "$$"]) {
+			assert.equal(repairMathForDisplay(["Sum:", source, "Follow-up."].join(newline)), expected);
+		}
+		assert.equal(repairMathForDisplay(expected), expected);
+	}
+});
+test("physical display framing stops at blank lines and keeps nested math, code and comments literal", () => {
+	for (const source of [
+		"$$a\n=b",
+		"$$a\n=b\n\n=c$$",
+		"$$a\\n=b$$",
+		"$$a\n=b\\$$",
+		"$$\na % literal $$\n\nb\n$$",
+		"> $$a\n> =b$$",
+		"- $$a\n  =b$$",
+		"```tex\n$$a\n=b$$\n```",
+		"    $$a\n    =b$$",
+	]) assert.equal(repairMathForDisplay(source), source);
+});
+test("a midline display close keeps later separate math and code recoverable", () => {
+	const source = "$$a\n=b$$\n\n```tex\n$$c\n=d$$\n```\n\n$$e\n=f$$";
+	const expected = "$$\na\n=b\n$$\n\n```tex\n$$c\n=d$$\n```\n\n$$\ne\n=f\n$$";
+	assert.equal(repairMathForDisplay(source), expected);
+	assert.equal(repairMathForDisplay(expected), expected);
+});
 test("proper nu survives every context, including fields with document escapes", () => {
 	for (const source of [math`$\nu$`, "$$\n" + math`\nu` + "\n$$", math`$\nabla f+\nu+\neq$`]) {
 		assert.equal(repairMathForDisplay(source), source);

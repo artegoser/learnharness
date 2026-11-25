@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { parseHTML } from "linkedom";
 import { MessageResponse, ToolContentResponse } from "../components/ai-elements/message.tsx";
 import { Reasoning, ReasoningContent } from "../components/ai-elements/reasoning.tsx";
+import { parseTranscriptBlocks } from "../components/transcript-math.ts";
 import { transformMathDelimiters } from "../src/core/math-delims.ts";
 
 const surfaces = {
@@ -65,6 +66,15 @@ for (const [name, surface] of Object.entries(surfaces)) describe(`streaming math
 		}
 	});
 
+	it("keeps an entire display formula with standalone equals lines after literal dollars", () => {
+		const formula = [String.raw`\frac1{n(n+1)}-\frac1{(n+1)(n+2)}`, "=", String.raw`\frac{(n+2)-n}{n(n+1)(n+2)}`, "=", String.raw`\frac2{n(n+1)(n+2)}.`].join("\n");
+		const source = `The delimiter is \`$$\`.\n\nTheir difference:\n$$\n${formula}\n$$\n\nTAIL`;
+		const document = documentFor(surface(source));
+		assert.deepEqual([...document.querySelectorAll(".katex-display .katex[data-tex]")].map(node => node.getAttribute("data-tex")), [formula]);
+		assert.equal(document.querySelectorAll(".katex-error").length, 0);
+		assert.ok([...document.querySelectorAll("p")].some(node => node.textContent === "TAIL"));
+	});
+
 	it("shows unfinished HTML literally but keeps complete HTML formatting", () => {
 		const partial = documentFor(surface("before <b TAIL"));
 		assert.equal(partial.body.textContent, "before <b TAIL");
@@ -90,6 +100,14 @@ for (const [name, surface] of Object.entries(surfaces)) describe(`streaming math
 		assert.ok(document.body.textContent.includes("TAIL"));
 		assert.ok(document.body.textContent.includes("[blocked]"));
 	});
+});
+
+it("keeps display blocks intact when adjacent inline math offsets the splitter's dollar count", () => {
+	const display = "$$\na\n=\nb\n$$";
+	const source = "$a$$b$\n\n" + display + "\n\nTAIL";
+	const blocks = parseTranscriptBlocks(source);
+	assert.equal(blocks.join(""), source);
+	assert.ok(blocks.some(block => block.includes(display)));
 });
 
 it("preserves native TeX source in both streaming and static modes", () => {
