@@ -251,10 +251,18 @@ function SystemLine({ children, testId }: { children: React.ReactNode; testId?: 
 /** One immediate optimistic placeholder; only its wording changes during
  * host-managed submission evaluation. The spinner keeps its identity. */
 export function PendingTurnIndicator({ evaluating }: { evaluating: boolean }) {
+	return <TurnActivityIndicator label={evaluating ? "Evaluating" : "Thinking"} />;
+}
+
+export function QuestionGenerationIndicator({ state }: { state?: string }) {
+	return state === "input-streaming" ? <TurnActivityIndicator label="Generating question" /> : null;
+}
+
+function TurnActivityIndicator({ label }: { label: string }) {
 	return (
 		<span className="flex items-center gap-2 font-ui text-xs font-medium uppercase tracking-wide text-muted-foreground">
-			<BrailleSpinner label={evaluating ? "Evaluating" : "Thinking"} />
-			<Shimmer duration={1}>{evaluating ? "EVALUATING…" : "THINKING…"}</Shimmer>
+			<BrailleSpinner label={label} />
+			<Shimmer duration={1}>{`${label.toUpperCase()}…`}</Shimmer>
 		</span>
 	);
 }
@@ -1957,7 +1965,9 @@ export function Chat({
 											{m.parts.slice(start, end).map((part, offset) => {
 												const pi = start + offset;
 												if (part.pluginProblem) return <ProblemCard key={pi} part={{ ...part, state: part.state ?? "input-available", toolCallId: part.toolCallId ?? "" }} />;
-												if (part.pluginQuestion) return <PluginQuestionPart key={pi} part={part} chatId={chatId} />;
+												if (part.pluginQuestion) return part.state === "input-streaming"
+													? <QuestionGenerationIndicator key={pi} state={part.state} />
+													: <PluginQuestionPart key={pi} part={part} chatId={chatId} />;
 												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;
 												// The step boundary where teaching begins (round 8): when
 												// the teach flip happens in a LATER step, its PhaseDivider
@@ -2030,14 +2040,14 @@ export function Chat({
 																draftRef.current = null;
 																void send({ type: "retry-question", messageId: malformed.messageId, contentIndex: malformed.contentIndex, toolCallId: malformed.toolCallId });
 															}} />;
-														// Pending/streaming questions live in the dock, not the
-														// transcript; answered ones render as graded records.
+														// Validated questions move into the dock. Completed answers
+														// render here as graded records.
 														if (part.state === "output-available") {
 															return (
 															<AnsweredCard key={pi} stateKey={`${part.sourceMessageId}:${part.sourceContentIndex}`} answer={part.output as QuestionAnswerData} input={part.input} toolCallId={part.toolCallId} />
 															);
 														}
-														return null;
+														return <QuestionGenerationIndicator key={pi} state={part.state} />;
 													}
 													default: {
 														// Built-in presentation stays authoritative; plugin renderers

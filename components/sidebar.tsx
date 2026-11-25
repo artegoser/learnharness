@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
@@ -415,6 +416,23 @@ export function RenameRow({ chat, onCommit, onCancel, depth = 0, compact = false
 export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
+function OpeningChatStatus() {
+	const contentRoot = useContext(HostContentRootContext);
+	const [visible, setVisible] = useState(false);
+	useEffect(() => {
+		const timer = window.setTimeout(() => setVisible(true), 150);
+		return () => window.clearTimeout(timer);
+	}, []);
+	if (!contentRoot || !visible) return null;
+	return createPortal(
+		<div role="status" className="lh-card-enter pointer-events-none absolute right-4 top-16 z-20 flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 font-ui text-xs text-foreground">
+			<span aria-hidden="true"><BrailleSpinner /></span>
+			Opening chat…
+		</div>,
+		contentRoot,
+	);
+}
+
 function SessionsSidebar() {
 	const { appearance: { compactSessionList } } = useAppearance();
 	const interactions = useInteractionLayers();
@@ -432,6 +450,10 @@ function SessionsSidebar() {
 	}, []);
 	const pathname = usePathname();
 	const router = useRouter();
+	const [openingChat, startOpeningChat] = useTransition();
+	const openChat = (chatId: string) => {
+		startOpeningChat(() => router.push(`/chat/${chatId}`));
+	};
 	const { open: openSettings } = useSettingsDialog();
 
 	/* New session (owner, 2026-09-13): NO POST — the button opens the
@@ -775,7 +797,7 @@ function SessionsSidebar() {
 							kbdSelected={kbdId === c.id}
 							onOpen={() => {
 								setKbdIndex(null);
-								router.push(`/chat/${c.id}`);
+								openChat(c.id);
 							}}
 							onContextMenu={(e) => openContext(e, c)}
 						/>
@@ -942,7 +964,7 @@ function SessionsSidebar() {
 									const target = shown![kbdIndex !== null && kbdIndex < n ? kbdIndex : 0];
 									if (!target) return;
 									e.preventDefault();
-									router.push(`/chat/${target.id}`);
+									openChat(target.id);
 									setKbdIndex(null);
 									e.currentTarget.blur();
 								}
@@ -1182,6 +1204,7 @@ function SessionsSidebar() {
 					}}
 					onDeleted={onFolderDeleted}
 				/>
+				{openingChat && <OpeningChatStatus />}
 			</aside>
 	);
 }
