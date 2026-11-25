@@ -36,7 +36,7 @@ import { MalformedQuestion } from "@/components/malformed-question";
 import { SubagentSteerCard } from "@/components/artifacts/steer-card";
 import { ChatSessionComposer } from "@/components/composer";
 import { rememberDraft, useSavedDraft } from "@/components/saved-draft";
-import { ChatSwitchTransition } from "@/components/chat-switch-transition";
+import { animateChatArrival, ChatSwitchTransition } from "@/components/chat-switch-transition";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
 import { dockStateKey } from "@/components/dock-state-key";
@@ -376,6 +376,12 @@ export function Chat({
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const virtualTranscriptRef = useRef<VirtualTranscriptHandle | null>(null);
 	useLayoutEffect(() => { virtualTranscriptRef.current?.positionInitialViewport(); }, []);
+	useLayoutEffect(() => {
+		const viewport = scrollContextRef.current?.scrollRef.current;
+		if (viewport && pathname === `/chat/${encodeURIComponent(chatId)}`) {
+			return animateChatArrival(pathname, viewport, sessionFindScopeRef.current?.querySelector<HTMLElement>("[data-dock-viewport]") ?? null);
+		}
+	}, [chatId, pathname]);
 	const rows = useMemo(() => transcriptRows(messages), [messages]);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
 	const newestTurnFrom = newestLearnerTurnFrom(messages);

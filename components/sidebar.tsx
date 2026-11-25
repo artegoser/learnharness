@@ -11,7 +11,7 @@ import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
 import { BrailleSpinner } from "@/components/braille-spinner";
-import { finishChatSwitchAnimation } from "@/components/chat-switch-transition";
+import { prepareChatSwitch } from "@/components/chat-switch-transition";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { SettingsDialogProvider, useSettingsDialog } from "@/components/settings/settings-dialog.tsx";
 import { Hint } from "@/components/ui/hint";
@@ -509,7 +509,7 @@ function SessionsSidebar() {
 		}
 		const type = from < 0 || to < 0 ? "chat-switch-enter" : from < to ? "chat-switch-next" : "chat-switch-previous";
 		const motion = target !== pathname && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-		if (target !== pathname) finishChatSwitchAnimation();
+		prepareChatSwitch(target, motion ? type : null);
 		setOpeningChatId(chatId);
 		startOpeningChat(() => router.push(target, motion ? { transitionTypes: [type] } : undefined));
 	};

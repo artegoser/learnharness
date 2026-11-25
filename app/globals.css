@@ -733,15 +733,16 @@ body {
 }
 
 ::view-transition-old(.chat-switch-next),
+::view-transition-old(.chat-switch-enter),
 ::view-transition-new(.chat-switch-previous) { --chat-switch-offset: -100%; }
 ::view-transition-old(.chat-switch-previous),
+::view-transition-new(.chat-switch-enter),
 ::view-transition-new(.chat-switch-next) { --chat-switch-offset: 100%; }
-::view-transition-new(.chat-switch-enter) { --chat-switch-offset: 96px; }
 ::view-transition-group(.chat-switch-enter) { animation: none; }
-::view-transition-old(.chat-switch-enter) { display: none; }
 
 ::view-transition-old(.chat-switch-next),
-::view-transition-old(.chat-switch-previous) {
+::view-transition-old(.chat-switch-previous),
+::view-transition-old(.chat-switch-enter) {
 	animation: chat-switch-out var(--chat-switch-duration) var(--chat-switch-easing) both;
 	mix-blend-mode: normal;
 }
@@ -764,7 +765,6 @@ body {
 /* The dock keeps its bottom edge while its captured height changes. */
 ::view-transition-group(.chat-switch-dock-down),
 ::view-transition-group(.chat-switch-dock-up) {
-	--chat-switch-dock-folded: inset(calc(100% - 3.5rem) 0 0);
 	z-index: 1;
 	overflow: clip;
 	animation-duration: var(--chat-switch-duration);
@@ -793,14 +793,14 @@ body {
 }
 
 @keyframes chat-switch-dock-unfold {
-	from { clip-path: var(--chat-switch-dock-folded); }
+	from { clip-path: inset(calc(100% - 3.5rem) 0 0); }
 	to { clip-path: inset(0); }
 }
 
 @keyframes chat-switch-dock-fold {
 	from { clip-path: inset(0); }
-	70% { clip-path: var(--chat-switch-dock-folded); opacity: 1; }
-	to { clip-path: var(--chat-switch-dock-folded); opacity: 0; }
+	70% { clip-path: inset(calc(100% - 3.5rem) 0 0); opacity: 1; }
+	to { clip-path: inset(calc(100% - 3.5rem) 0 0); opacity: 0; }
 }
 
 [data-chat-highlight]::before {
@@ -817,30 +817,21 @@ body {
 	visibility: hidden;
 }
 
-/* Overlap the row edge so adjacent accent fills stay solid at fractional scale. */
-[data-chat-highlight] button[data-session-id][aria-current="page"] {
-	isolation: isolate;
-}
-
-[data-chat-highlight] button[data-session-id][aria-current="page"]::before {
-	content: "";
-	position: absolute;
-	inset: -1px 0;
-	z-index: -1;
-	background-color: var(--color-accent);
-	pointer-events: none;
-}
-
 @media (prefers-reduced-motion: no-preference) {
+	[data-chat-switch-arrival] {
+		--chat-switch-offset: 25%;
+		animation: chat-switch-in var(--chat-switch-duration) var(--chat-switch-easing);
+	}
+	[data-chat-switch-arrival="chat-switch-previous"] { --chat-switch-offset: -25%; }
+	[data-chat-switch-dock-arrival] {
+		animation: chat-switch-dock-unfold var(--chat-switch-duration) var(--chat-switch-easing);
+	}
 	[data-chat-highlight-move]::before {
 		visibility: visible;
 		transition: transform var(--chat-highlight-duration, var(--chat-switch-duration)) var(--chat-switch-easing);
 	}
 	[data-chat-highlight-move] button[data-session-id][aria-current="page"] {
 		background-color: transparent;
-	}
-	[data-chat-highlight-move] button[data-session-id][aria-current="page"]::before {
-		display: none;
 	}
 }
 
