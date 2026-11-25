@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
@@ -308,6 +307,7 @@ function sessionMeta(chat: ChatListItem): string {
 export function SessionRow({
 	chat,
 	active,
+	opening = false,
 	onOpen,
 	kbdSelected = false,
 	onContextMenu,
@@ -317,6 +317,7 @@ export function SessionRow({
 	chat: ChatListItem;
 	compact?: boolean;
 	active: boolean;
+	opening?: boolean;
 	onOpen: () => void;
 	/** Folder depth in the sidebar tree (0 = unfiled). */
 	depth?: number;
@@ -326,6 +327,9 @@ export function SessionRow({
 	/** Right-click opens the context menu (wave 6: Rename / Delete). */
 	onContextMenu?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
+	const practiceBadge = chat.kind === "practice"
+		? <DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
+		: null;
 	return (
 		<button
 			type="button"
@@ -350,9 +354,7 @@ export function SessionRow({
 			{/* The dumbbell rides the FAR RIGHT (owner round 6, 2026-10-05) —
 			    was left of the name; right-aligned keeps the titles flush with
 			    the teaching rows and reads cleaner. */}
-			{(chat.kind ?? "teach") === "practice" && (
-				<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
-			)}
+			{opening ? <OpeningChatStatus fallback={practiceBadge} /> : practiceBadge}
 		</button>
 	);
 }
@@ -417,21 +419,17 @@ export function RenameRow({ chat, onCommit, onCancel, depth = 0, compact = false
 export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
-function OpeningChatStatus() {
-	const contentRoot = useContext(HostContentRootContext);
+function OpeningChatStatus({ fallback }: { fallback: React.ReactNode }) {
 	const [visible, setVisible] = useState(false);
 	useEffect(() => {
 		const timer = window.setTimeout(() => setVisible(true), 150);
 		return () => window.clearTimeout(timer);
 	}, []);
-	if (!contentRoot || !visible) return null;
-	return createPortal(
-		<div role="status" className="chat-opening-status pointer-events-none absolute right-4 top-16 z-20 flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 font-ui text-xs text-foreground">
-			<span aria-hidden="true"><BrailleSpinner /></span>
-			Opening chat…
-		</div>,
-		contentRoot,
-	);
+	return visible ? (
+		<span className="flex size-3.5 shrink-0 items-center justify-center">
+			<BrailleSpinner label="Opening chat" />
+		</span>
+	) : fallback;
 }
 
 function SessionsSidebar() {
@@ -452,6 +450,7 @@ function SessionsSidebar() {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [openingChat, startOpeningChat] = useTransition();
+	const [openingChatId, setOpeningChatId] = useState<string | null>(null);
 	const { open: openSettings } = useSettingsDialog();
 
 	/* New session (owner, 2026-09-13): NO POST — the button opens the
@@ -503,6 +502,7 @@ function SessionsSidebar() {
 		const to = shown?.findIndex(chat => chat.id === chatId) ?? -1;
 		const type = from < 0 || to < 0 ? "chat-switch-enter" : from < to ? "chat-switch-next" : "chat-switch-previous";
 		const motion = target !== pathname && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		setOpeningChatId(chatId);
 		startOpeningChat(() => router.push(target, motion ? { transitionTypes: [type] } : undefined));
 	};
 
@@ -821,6 +821,7 @@ function SessionsSidebar() {
 							depth={depth}
 							compact={compactSessionList}
 							active={pathname === `/chat/${c.id}`}
+							opening={openingChat && openingChatId === c.id && pathname !== `/chat/${c.id}`}
 							kbdSelected={kbdId === c.id}
 							onOpen={() => {
 								setKbdIndex(null);
@@ -1231,7 +1232,6 @@ function SessionsSidebar() {
 					}}
 					onDeleted={onFolderDeleted}
 				/>
-				{openingChat && <OpeningChatStatus />}
 			</aside>
 	);
 }
