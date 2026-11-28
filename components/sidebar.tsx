@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
@@ -11,7 +11,6 @@ import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
 import { BrailleSpinner } from "@/components/braille-spinner";
-import { prepareChatSwitch } from "@/components/chat-switch-transition";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { SettingsDialogProvider, useSettingsDialog } from "@/components/settings/settings-dialog.tsx";
 import { Hint } from "@/components/ui/hint";
@@ -498,20 +497,8 @@ function SessionsSidebar() {
 	// The keyboard walk follows the visible session rows in tree order.
 	const shown = useMemo(() => rows?.flatMap((r) => r.type === "session" ? [r.session] : []) ?? null, [rows]);
 	const openChat = (chatId: string) => {
-		const target = `/chat/${chatId}`;
-		let from = shown?.findIndex(chat => pathname === `/chat/${chat.id}`) ?? -1;
-		let to = shown?.findIndex(chat => chat.id === chatId) ?? -1;
-		// Search and closed folders can hide the currently open chat.
-		if (from < 0 && chats && pathname.startsWith("/chat/")) {
-			const all = flattenSessionTree(buildSessionTree(chats, organization, { query: "" }), () => true);
-			from = all.findIndex(row => row.type === "session" && pathname === `/chat/${row.session.id}`);
-			to = all.findIndex(row => row.type === "session" && row.session.id === chatId);
-		}
-		const type = from < 0 || to < 0 ? "chat-switch-enter" : from < to ? "chat-switch-next" : "chat-switch-previous";
-		const motion = target !== pathname && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-		prepareChatSwitch(target, motion ? type : null);
 		setOpeningChatId(chatId);
-		startOpeningChat(() => router.push(target, motion ? { transitionTypes: [type] } : undefined));
+		startOpeningChat(() => router.push(`/chat/${chatId}`));
 	};
 
 	const refreshInFlightRef = useRef(false);
@@ -619,41 +606,6 @@ function SessionsSidebar() {
 	const [kbdIndex, setKbdIndex] = useState<number | null>(null);
 	const searchRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
-	const sessionRowsRef = useRef<HTMLDivElement>(null);
-	const previousHighlight = useRef<{ root: HTMLDivElement; pathname: string } | null>(null);
-	useLayoutEffect(() => {
-		const root = sessionRowsRef.current;
-		const row = root?.querySelector<HTMLElement>('button[data-session-id][aria-current="page"]');
-		if (!root || !row) {
-			root?.removeAttribute("data-chat-highlight");
-			root?.removeAttribute("data-chat-highlight-move");
-			previousHighlight.current = null;
-			return;
-		}
-		const bounds = root.getBoundingClientRect();
-		const target = row.getBoundingClientRect();
-		const previous = previousHighlight.current;
-		const transform = `translate(${target.left - bounds.left}px, ${target.top - bounds.top}px) scale(${target.width}, ${target.height})`;
-		if (root.style.getPropertyValue("--chat-highlight-transform") !== transform) {
-			const switching = previous?.root === root && previous.pathname !== pathname;
-			const moving = previous?.root === root && root.hasAttribute("data-chat-highlight-move");
-			root.style.removeProperty("--chat-highlight-duration");
-			if (moving && !switching) {
-				// The list can refresh during a switch. Retarget from the painted
-				// position using the remaining time instead of snapping to the row.
-				const animation = root.getAnimations({ subtree: true }).find(({ effect }) =>
-					effect instanceof KeyframeEffect && effect.target === root && effect.pseudoElement === "::before");
-				const end = animation?.effect?.getComputedTiming().endTime;
-				if (typeof end === "number" && typeof animation?.currentTime === "number") {
-					root.style.setProperty("--chat-highlight-duration", `${Math.max(16, end - animation.currentTime)}ms`);
-				}
-			}
-			root.toggleAttribute("data-chat-highlight-move", switching || moving);
-			root.style.setProperty("--chat-highlight-transform", transform);
-		}
-		root.setAttribute("data-chat-highlight", "");
-		previousHighlight.current = { root, pathname };
-	});
 
 	/* ── Wave 6 chunk A: context menu + inline rename + deletion ──
 	   Right-click a session row → MenuShell: the two management actions
@@ -1080,12 +1032,7 @@ function SessionsSidebar() {
 				    highlights run to the edge; it shows while scrolling/hovering. */}
 				<OverlayScrollArea scrollRef={listRef} data-testid="session-list" className="flex flex-col" {...folderDrop.containerProps}>
 					{(creatingFolder?.parentId === null || (rows !== null && rows.length > 0)) && (
-						<div ref={sessionRowsRef} data-testid="session-rows" className="relative isolate"
-							onTransitionEnd={event => {
-								if (event.target === event.currentTarget && event.propertyName === "transform" && event.nativeEvent.pseudoElement === "::before") {
-									event.currentTarget.removeAttribute("data-chat-highlight-move");
-								}
-							}}>
+						<div data-testid="session-rows">
 							{creatingFolder?.parentId === null && (
 								<NewFolderRow depth={0} compact={compactSessionList} onDone={() => setCreatingFolder(null)}
 									onCreate={(name) => changeFolders({ action: "create-folder", name, parentId: null })} />

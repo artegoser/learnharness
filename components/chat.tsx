@@ -36,7 +36,6 @@ import { MalformedQuestion } from "@/components/malformed-question";
 import { SubagentSteerCard } from "@/components/artifacts/steer-card";
 import { ChatSessionComposer } from "@/components/composer";
 import { rememberDraft, useSavedDraft } from "@/components/saved-draft";
-import { animateChatArrival, ChatSwitchTransition } from "@/components/chat-switch-transition";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
 import { dockStateKey } from "@/components/dock-state-key";
@@ -376,12 +375,6 @@ export function Chat({
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const virtualTranscriptRef = useRef<VirtualTranscriptHandle | null>(null);
 	useLayoutEffect(() => { virtualTranscriptRef.current?.positionInitialViewport(); }, []);
-	useLayoutEffect(() => {
-		const viewport = scrollContextRef.current?.scrollRef.current;
-		if (viewport && pathname === `/chat/${encodeURIComponent(chatId)}`) {
-			return animateChatArrival(pathname, viewport, sessionFindScopeRef.current?.querySelector<HTMLElement>("[data-dock-viewport]") ?? null);
-		}
-	}, [chatId, pathname]);
 	const rows = useMemo(() => transcriptRows(messages), [messages]);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
 	const newestTurnFrom = newestLearnerTurnFrom(messages);
@@ -1840,7 +1833,6 @@ export function Chat({
 					contextRef={scrollContextRef} aria-busy={historyLoading || undefined}>
 					{!historyLoading && <SessionMessageNavigation virtualTranscriptRef={virtualTranscriptRef} />}
 					<TranscriptElementReporter onElement={setTranscriptElement} />
-					<ChatSwitchTransition part="transcript">
 					<ConversationContent className="min-h-full gap-0 p-0" scrollClassName="overflow-auto">
 						<div data-session-find-root="" className={`${COLUMN} flex flex-1 flex-col gap-4 pt-4`}>
 							{messages.length === 0 && !busy && (
@@ -2124,14 +2116,13 @@ export function Chat({
 						    effect reports before paint). */}
 						<div aria-hidden data-testid="dock-spacer" style={{ height: dockReserve }} />
 				</ConversationContent>
-				</ChatSwitchTransition>
 				{/* The dock: an overlay sibling of the scroller (the
 				    use-stick-to-bottom pattern). The scroll-down button lives
 				    INSIDE the overlay now (owner refinement round, 2026-09-24):
 				    anchored to the dock block's top edge, so it rides every
 				    height morph (typing, a question growing the band, the
 				    fold) and NEVER overlaps the composer. */}
-				<ChatSwitchTransition part="dock"><DockOverlay
+				<DockOverlay
 					onScrollToBottom={() => { void virtualTranscriptRef.current?.scrollToBottom(); }}
 					viewReader={inputViewReader}
 					viewTargets={surfaceTarget ? { text: textTarget()!, answer: builtinTarget, thinking: thinkingTarget(), pluginQuestion: pluginQuestionTarget(), pluginProblem: pluginProblemTarget() } : undefined}
@@ -2248,7 +2239,7 @@ export function Chat({
 						// raw side updates with this main answer.
 						send();
 					}}
-				/></ChatSwitchTransition>
+				/>
 				</Conversation>
 				{sideThread.state?.mode === "panel" && (
 					<SideThreadPanel>
