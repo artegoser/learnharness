@@ -66,7 +66,7 @@ import {
 	type LhMessage,
 	type ModelSlotName,
 } from "@/src/core";
-import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
+import { PlanBlock, PlanPopup } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext, type SessionImage } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
@@ -106,14 +106,14 @@ import { PluginSessionTopBarActions } from "@/components/plugin-chrome";
 import { usePluginShortcutPage } from "@/components/plugin-shortcuts";
 import { createPluginSessionActionContext, type PluginSessionViewInput } from "@/src/core";
 import type { SessionInputViewReader, SessionViewTargets, NativeQuestionViewState, ViewReaderRef } from "./session-view-readers";
-import type { ChatDockSeed, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
+import type { ChatDockSeed, ChatOpeningPresentation, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionCoverage, SessionPricing } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
 import {
 	CompactionCutDivider,
 	CompactionMomentDivider,
 	type CompactionDividerData,
 } from "@/components/compaction-divider";
-import { CoverageRing } from "@/components/extraction-coverage";
+import { CoverageRing, type GraphRead } from "@/components/extraction-coverage";
 import { Button } from "@/components/ui/button";
 import {
 	activeProblemOf,
@@ -124,6 +124,7 @@ import {
 	findPendingToolCall,
 	phaseAt3,
 	phaseTimeline,
+	latestPlanTree,
 	teachStepIndex,
 	toolQuestionKind,
 	questionNeedsReveal,
@@ -281,11 +282,16 @@ export function Chat({
 	title,
 	initialMessages,
 	openingLayout,
+	openingPresentation,
+	initialSideHistoryIds,
+	initialGraph,
+	initialCoverage,
 	initialError,
 	initialPrompt,
 	initiallyInFlight,
 	initiallyCompacting = false,
 	initialConfigured = false,
+	initialZeroKeys,
 	initialDock,
 	kind = "teach",
 }: {
@@ -293,6 +299,10 @@ export function Chat({
 	title: string;
 	initialMessages: LhMessage[];
 	openingLayout?: readonly TranscriptRowSize[];
+	openingPresentation?: ChatOpeningPresentation;
+	initialSideHistoryIds?: readonly string[];
+	initialGraph?: GraphRead;
+	initialCoverage?: SessionCoverage | null;
 	/** Memory-only settlement notice supplied on reopening. */
 	initialError?: string;
 	/** The session kind (practice sessions, owner 2026-10-04): practice
@@ -312,9 +322,12 @@ export function Chat({
 	 *  it (BYOK, owner 2026-09-22). The server gate stays the truth; this
 	 *  only decides whether the pill rides the composer. */
 	initialConfigured?: boolean;
+	initialZeroKeys?: boolean;
 	initialDock?: ChatDockSeed;
 }) {
 	const [historyLoading, setHistoryLoading] = useState(!!openingLayout);
+	const indexedPresentation = historyLoading ? openingPresentation : undefined;
+	const openingPlan = indexedPresentation?.plan ?? undefined;
 	// Reattach plumbing (background-turn runner wave): the hook holds the
 	// settled terminal's callback — a stable ref assigned below, once
 	// syncFromServer exists (refs, not closures: no stale capture).
@@ -711,7 +724,8 @@ export function Chat({
 	// The phase at every message (one linear fold): the transcript draws a
 	// color-coded dotted divider at each boundary; the header chip reads the
 	// session's current phase.
-	const phases = useMemo(() => phaseTimeline(messages), [messages]);
+	const phaseBeforeTail = indexedPresentation?.phaseBeforeTail;
+	const phases = useMemo(() => phaseTimeline(messages, phaseBeforeTail), [messages, phaseBeforeTail]);
 
 	const [composerDraftRevision, setComposerDraftRevision] = useState(0);
 	/* The composer draft ref is synchronous, so sends and dictation flushes
@@ -734,7 +748,7 @@ export function Chat({
 	}, [saveComposerDraft]);
 	// Saved slot completeness is live, but the session's selected route
 	// comes from its own ordinary model control, never today's Strong pin.
-	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured);
+	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured, initialZeroKeys);
 	const catalogRef = useRef(catalog);
 	catalogRef.current = catalog;
 	const initialSelection = initialDock?.model.settings?.model ?? initialDock?.model.strong?.model;
@@ -1084,7 +1098,8 @@ export function Chat({
 	};
 	const renderSideEntry = (sourceMessageId?: string) => {
 		if (!sourceMessageId) return null;
-		const hasHistory = sideThread.threads.some((thread) => thread.anchor.messageId === sourceMessageId && thread.messages.length > 0);
+		const hasHistory = sideThread.threads.some((thread) => thread.anchor.messageId === sourceMessageId && thread.messages.length > 0) ||
+			(!sideThread.threadsLoaded && initialSideHistoryIds?.includes(sourceMessageId) === true);
 		return <div className="mt-1 flex justify-end">
 			<Button type="button" variant="ghost" size="icon-xs" data-testid="side-conversation-button" data-side-segment-id={sourceMessageId}
 				data-has-history={hasHistory} aria-label={hasHistory ? "Open side conversation" : "Ask a side question"}
@@ -1312,7 +1327,7 @@ export function Chat({
 	// element is always truthy; gating on the node alone mounted a phantom
 	// (invisible, clickable) button in the bottom-right whenever a question
 	// was pending with no plan yet (owner report, UI round 2026-10-01).
-	const hasPlan = useMemo(() => planExists(messages), [messages]);
+	const hasPlan = useMemo(() => planExists(messages, openingPlan), [messages, openingPlan]);
 	// The coverage ring's refresh chain (extraction-UX redesign): bumped at
 	// turn settle — the moment this session's uncovered mass changes.
 	const [coverageTick, setCoverageTick] = useState(0);
@@ -1342,7 +1357,7 @@ export function Chat({
 	setupOpenRef.current = setupOpen;
 	// The session's live plan (drives the top-bar chip; the marginalia
 	// derives its own from the same transcript).
-	const planTree = useMemo(() => latestTree(messages), [messages]);
+	const planTree = useMemo(() => indexedPresentation ? indexedPresentation.plan?.tree : latestPlanTree(messages), [messages, indexedPresentation]);
 
 	// ── Session usage (wave-4 stats bar) ──
 	// The page carries the initial summary. Load turn details once history
@@ -1805,7 +1820,7 @@ export function Chat({
 					{/* Practice (owner, 2026-10-04): the coverage ring hides —
 				    practice never extracts, so an ever-filling ring with no
 				    run behind it would lie. */}
-					{kind !== "practice" && <CoverageRing chatId={chatId} refreshKey={coverageTick} />}
+					{kind !== "practice" && <CoverageRing chatId={chatId} refreshKey={coverageTick} initialGraph={initialGraph} initialCoverage={initialCoverage} />}
 					{/* Practice sessions: no phase arc — a quiet Practice tag
 					    instead of the phase chip. */}
 					{kind === "practice" ? (
@@ -2161,7 +2176,7 @@ export function Chat({
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
 					onModelChange={recordSelectedModel}
-					plan={hasPlan ? <PlanMarginalia messages={messages} /> : undefined}
+					plan={hasPlan ? <PlanMarginalia messages={messages} openingPlan={openingPlan} /> : undefined}
 					onOpenPlan={() => setPlanOpen(true)}
 					requiresReveal={requiresReveal}
 					readingThinking={readingThinkingSeed.value}
@@ -2293,7 +2308,7 @@ export function Chat({
 						onClose={() => setFigureFocus(null)}
 					/>
 				)}
-				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} />}
+				{planOpen && <PlanPopup messages={messages} openingPlan={openingPlan} onClose={() => setPlanOpen(false)} />}
 				<SelectionToolbar viewport={transcriptElement} actions={selectionActions} />
 				{citationEdit && (
 					<CitationCommentPopover
