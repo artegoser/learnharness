@@ -1,12 +1,12 @@
 "use client";
 
-import { useTranscriptState } from "./transcript-row-state";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
 import { GlyphMark } from "@/components/ui/glyph-mark";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SubmittedImages } from "./submitted-images";
 import { ThinkingBlock } from "@/components/thinking-block";
+import { useDisclosure } from "@/components/disclosure-store";
 import { PathText } from "@/components/file-path-chip";
 import { cn } from "@/lib/utils";
 import { ToolContentResponse } from "@/components/ai-elements/message";
@@ -44,7 +44,7 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
 export function AnsweredCard({ answer: savedAnswer, input, stateKey, toolCallId }: { answer: QuestionAnswerData; input?: unknown; stateKey?: string; toolCallId?: string }) {
 	const answer = answerForPresentation(savedAnswer, input);
 	const optionLetters = answeredOptionLetters(savedAnswer, input);
-	const [whyOpen, setWhyOpen] = useTranscriptState(`why:${stateKey ?? savedAnswer.questionText}`, false); // retained across virtual unmounts
+	const [whyOpen, setWhyOpen] = useDisclosure("why", stateKey ?? savedAnswer.questionText);
 
 	// ADAPT QUESTION LAYOUT on the record (owner, session-appearance-layout):
 	// an answered question gets two columns exactly when its question card
@@ -154,7 +154,7 @@ export function AnsweredCard({ answer: savedAnswer, input, stateKey, toolCallId 
 		    ThinkingBlock, instead of an inset inside the answer. Same muted
 		    rail as before; the label is now plain "Your thinking". */}
 		{(answer.readingThinking || answer.images?.readingThinking?.length) && (
-			<ThinkingBlock testId="reading-thinking-block" label="YOUR THINKING" text={answer.readingThinking ?? ""} images={answer.images?.readingThinking} defaultOpen />
+			<ThinkingBlock testId="reading-thinking-block" label="YOUR THINKING" text={answer.readingThinking ?? ""} images={answer.images?.readingThinking} />
 		)}
 		{/* [&>*:last-child]:mb-0 (owner round, 2026-10-07): on ask cards the
 		    thinking row is the last child — its my-3 stacked with the card's
@@ -307,9 +307,10 @@ export function AnsweredCard({ answer: savedAnswer, input, stateKey, toolCallId 
 			    else; py-2 stays for vertical air. */}
 			{isQuiz && answer.explanation && (
 				/* The TUCKED explanation — ALL questions (owner, 2026-10-07): the
-				   verdict shows, the explanation sits collapsed behind the Why
-				   toggle — viewable, never center stage. Identical to the
-				   prediction pattern it generalizes (owner, 2026-10-03). */
+				   verdict shows, the explanation sits behind the Why toggle —
+				   viewable, never center stage, unless Appearance → Start
+				   expanded opens it. Identical to the prediction pattern it
+				   generalizes (owner, 2026-10-03). */
 				<div className="mt-2" data-testid="tucked-explanation">
 					<button
 						type="button"

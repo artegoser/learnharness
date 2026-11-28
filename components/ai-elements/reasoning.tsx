@@ -1,7 +1,8 @@
 "use client";
 
-import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
+import { kindOpen, useDisclosure } from "@/components/disclosure-store";
+import { useAppearance } from "@/components/settings/appearance";
 import {
   Collapsible,
   CollapsibleContent,
@@ -27,7 +28,6 @@ import { transformMathDelimiters } from "@/src/core";
 import { streamdownPlugins, streamdownRehypePlugins, streamdownRemend } from "./message";
 import { mdComponents } from "@/components/md-blocks";
 import { Shimmer } from "./shimmer";
-import { useTranscriptState } from "../transcript-row-state";
 
 interface ReasoningContextValue {
   isStreaming: boolean;
@@ -45,10 +45,9 @@ export const useReasoning = () => {
   return context;
 };
 
-export type ReasoningProps = ComponentProps<typeof Collapsible> & {
+export type ReasoningProps = Omit<ComponentProps<typeof Collapsible>, "defaultOpen"> & {
   isStreaming?: boolean;
   open?: boolean;
-  defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   stateKey?: string;
 };
@@ -60,45 +59,49 @@ export const Reasoning = memo(
     className,
     isStreaming = false,
     open,
-    defaultOpen,
     onOpenChange,
     stateKey = "agent-reasoning",
     children,
     ...props
   }: ReasoningProps) => {
-    // COLLAPSED BY DEFAULT, ALWAYS (owner, streaming round 2026-10-01):
-    // the old default opened on streaming and an auto-open effect
-    // re-fought a manual collapse — the block "wasn't collapsible until
-    // it finished". Collapsed is the default; opening is always the
-    // learner's click; the auto-close after the stream still tidies a
-    // row the learner had opened.
-    const resolvedDefaultOpen = defaultOpen ?? false;
-    const [rememberedOpen, rememberOpen] = useTranscriptState(stateKey, resolvedDefaultOpen);
-
-    const [isOpen, setIsOpen] = useControllableState<boolean>({
-      defaultProp: rememberedOpen,
-      onChange: (value) => { rememberOpen(value); onOpenChange?.(value); },
-      prop: open,
-    });
+    // The row starts at the Agent thinking setting (factory: collapsed)
+    // and never auto-opens on streaming (owner, streaming round
+    // 2026-10-01): an auto-open effect re-fought a manual collapse, so
+    // the block "wasn't collapsible until it finished".
+    const [ownOpen, setOwnOpen] = useDisclosure("agentThinking", stateKey);
+    const expandByDefault = useAppearance().appearance.expandByDefault.agentThinking;
+    const isOpen = open ?? ownOpen;
+    const setIsOpen = useCallback(
+      (next: boolean) => {
+        setOwnOpen(next);
+        onOpenChange?.(next);
+      },
+      [setOwnOpen, onOpenChange]
+    );
     const hasEverStreamedRef = useRef(isStreaming);
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
 
-    // Auto-close when streaming ends (once only, and only if it ever streamed)
+    // Auto-close when streaming ends (once only, and only if it ever
+    // streamed) tidies a row the learner opened by itself. When every row
+    // of the kind is open, by the setting or a shortcut, closing this one
+    // would leave the chat in mixed states, so it stays open.
     useEffect(() => {
       if (
+        !kindOpen("agentThinking", expandByDefault) &&
         hasEverStreamedRef.current &&
         !isStreaming &&
         isOpen &&
         !hasAutoClosed
       ) {
         const timer = setTimeout(() => {
+          if (kindOpen("agentThinking", expandByDefault)) return;
           setIsOpen(false);
           setHasAutoClosed(true);
         }, AUTO_CLOSE_DELAY);
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [expandByDefault, isStreaming, isOpen, setIsOpen, hasAutoClosed]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {
